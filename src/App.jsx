@@ -137,8 +137,118 @@ function InputSheet({who,onClose,onSave,prevSnap,C,MEMBERS}){
   );
 }
 
+// ── 홈 달력 ──────────────────────────────────────────
+function HomeCalendar({snapsJw,snapsSh,C,MEMBERS}){
+  const now=new Date();
+  const [calYear,setCalYear]=useState(now.getFullYear());
+  const [calMonth,setCalMonth]=useState(now.getMonth());
+  const [selected,setSelected]=useState(null); // { date, snapJw, snapSh }
+
+  const firstDay=new Date(calYear,calMonth,1).getDay();
+  const daysInMonth=new Date(calYear,calMonth+1,0).getDate();
+  const cells=[];
+  for(let i=0;i<firstDay;i++)cells.push(null);
+  for(let d=1;d<=daysInMonth;d++)cells.push(d);
+
+  const ds=(d)=>`${calYear}-${String(calMonth+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+  const getSnap=(snaps,d)=>snaps.find(s=>s.date===ds(d));
+
+  // 이번달 합산 사용액
+  const monthStr=`${calYear}-${String(calMonth+1).padStart(2,"0")}`;
+  const monthSnapsJw=snapsJw.filter(s=>s.date.startsWith(monthStr));
+  const monthSnapsSh=snapsSh.filter(s=>s.date.startsWith(monthStr));
+  let monthUsed=0;
+  for(let i=1;i<monthSnapsJw.length;i++){
+    const u=calcUsage(monthSnapsJw[i],monthSnapsJw[i-1]);
+    if(u)monthUsed+=u.used;
+  }
+  for(let i=1;i<monthSnapsSh.length;i++){
+    const u=calcUsage(monthSnapsSh[i],monthSnapsSh[i-1]);
+    if(u)monthUsed+=u.used;
+  }
+  const totalDays=now.getFullYear()===calYear&&now.getMonth()===calMonth?now.getDate():daysInMonth;
+
+  return(
+    <div style={{background:C.card,borderRadius:16,padding:16,marginBottom:14}}>
+      {/* 달력 헤더 */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+        <button onClick={()=>{if(calMonth===0){setCalYear(y=>y-1);setCalMonth(11);}else setCalMonth(m=>m-1);}} style={{background:C.primaryBg,border:"none",color:C.primary,borderRadius:8,width:30,height:30,fontSize:15,cursor:"pointer"}}>‹</button>
+        <div style={{textAlign:"center"}}>
+          <div style={{fontSize:14,fontWeight:700,color:C.text}}>{calYear}년 {MONTH_KR[calMonth]}</div>
+          {monthUsed>0&&<div style={{fontSize:11,color:C.red,marginTop:2}}>이달 사용 약 {fmt(monthUsed)}원</div>}
+        </div>
+        <button onClick={()=>{if(calMonth===11){setCalYear(y=>y+1);setCalMonth(0);}else setCalMonth(m=>m+1);}} style={{background:C.primaryBg,border:"none",color:C.primary,borderRadius:8,width:30,height:30,fontSize:15,cursor:"pointer"}}>›</button>
+      </div>
+
+      {/* 범례 */}
+      <div style={{display:"flex",gap:10,marginBottom:10,justifyContent:"flex-end"}}>
+        {Object.entries(MEMBERS).map(([k,mb])=>(
+          <div key={k} style={{display:"flex",alignItems:"center",gap:4}}>
+            <div style={{width:8,height:8,borderRadius:"50%",background:mb.color}}/>
+            <span style={{fontSize:10,color:C.muted}}>{mb.label}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* 요일 */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",marginBottom:6}}>
+        {DOW.map((d,i)=>(<div key={d} style={{textAlign:"center",fontSize:10,fontWeight:600,color:i===0?C.red:i===6?C.sh:C.muted,padding:"3px 0"}}>{d}</div>))}
+      </div>
+
+      {/* 날짜 */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
+        {cells.map((d,i)=>{
+          if(!d)return<div key={`e${i}`}/>;
+          const date=ds(d);
+          const sjw=getSnap(snapsJw,d);
+          const ssh=getSnap(snapsSh,d);
+          const hasJw=!!sjw, hasSh=!!ssh;
+          const isToday=date===todayStr();
+          const dow=i%7;
+          return(
+            <div key={d} onClick={()=>(hasJw||hasSh)&&setSelected({date,snapJw:sjw,snapSh:ssh})}
+              style={{display:"flex",flexDirection:"column",alignItems:"center",padding:"4px 2px",borderRadius:8,background:isToday?C.primaryBg:"transparent",border:isToday?`1.5px solid ${C.primary}`:"1.5px solid transparent",cursor:(hasJw||hasSh)?"pointer":"default",minHeight:44}}>
+              <span style={{fontSize:12,fontWeight:isToday?800:(hasJw||hasSh)?700:400,color:dow===0?C.red:dow===6?C.sh:C.text,marginBottom:3}}>{d}</span>
+              <div style={{display:"flex",gap:2,flexWrap:"wrap",justifyContent:"center"}}>
+                {hasJw&&<div style={{width:6,height:6,borderRadius:"50%",background:MEMBERS.jiwon.color}}/>}
+                {hasSh&&<div style={{width:6,height:6,borderRadius:"50%",background:MEMBERS.suhyun.color}}/>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* 선택된 날짜 팝업 */}
+      {selected&&(
+        <div style={{marginTop:12,background:C.bg,borderRadius:12,padding:14}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <span style={{fontSize:13,fontWeight:700,color:C.text}}>{selected.date}</span>
+            <button onClick={()=>setSelected(null)} style={{background:"none",border:"none",color:C.muted,fontSize:16,cursor:"pointer"}}>✕</button>
+          </div>
+          {[["jiwon",selected.snapJw],["suhyun",selected.snapSh]].map(([k,snap])=>{
+            if(!snap)return null;
+            const mb=MEMBERS[k];
+            return(<div key={k} style={{background:mb.bg,borderRadius:10,padding:"10px 12px",marginBottom:8}}>
+              <div style={{fontSize:12,fontWeight:700,color:mb.color,marginBottom:6}}>{mb.label}</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                {[["현금",pn(snap.cash),mb.color],["카드",pn(snap.card),C.red],["급여",pn(snap.salary),C.green],["카드결제",pn(snap.cardPaid),C.primary]].filter(([,v])=>v>0).map(([l,v,c])=>(
+                  <div key={l} style={{background:C.card,borderRadius:7,padding:"5px 8px"}}>
+                    <div style={{fontSize:10,color:C.muted}}>{l}</div>
+                    <div style={{fontSize:12,fontWeight:700,color:c}}>{fmt(v)}원</div>
+                  </div>
+                ))}
+              </div>
+              {snap.memo&&<div style={{fontSize:11,color:C.muted,marginTop:6}}>💬 {snap.memo}</div>}
+            </div>);
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── 홈 탭 ────────────────────────────────────────────
-function HomeTab({snapJw,snapSh,prevJw,prevSh,profiles,fixedExps,installs,onAdd,C,MEMBERS}){
+function HomeTab({snapJw,snapSh,prevJw,prevSh,snapsJw,snapsSh,profiles,fixedExps,installs,onAdd,C,MEMBERS}){
   const now=new Date(); const y=now.getFullYear(),m=now.getMonth();
   const usageJw=calcUsage(prevJw,snapJw), usageSh=calcUsage(prevSh,snapSh);
   const cashJw=snapJw?pn(snapJw.cash):0, cashSh=snapSh?pn(snapSh.cash):0;
@@ -203,6 +313,9 @@ function HomeTab({snapJw,snapSh,prevJw,prevSh,profiles,fixedExps,installs,onAdd,
           ))}
         </div>
       </div>
+
+      {/* 홈 달력 */}
+      <HomeCalendar snapsJw={snapsJw} snapsSh={snapsSh} C={C} MEMBERS={MEMBERS}/>
     </div>
   );
 }
@@ -563,7 +676,7 @@ export default function App(){
       </div>
       <div style={{padding:"16px 16px 0"}}>
         {loading?<div style={{textAlign:"center",padding:80,color:C.muted}}>불러오는 중...</div>
-        :tab==="home"   ?<HomeTab snapJw={snapsJw[0]} snapSh={snapsSh[0]} prevJw={snapsJw[1]} prevSh={snapsSh[1]} profiles={profiles} fixedExps={fixedExps} installs={installs} onAdd={setInputWho} C={C} MEMBERS={MEMBERS}/>
+        :tab==="home"   ?<HomeTab snapJw={snapsJw[0]} snapSh={snapsSh[0]} prevJw={snapsJw[1]} prevSh={snapsSh[1]} snapsJw={snapsJw} snapsSh={snapsSh} profiles={profiles} fixedExps={fixedExps} installs={installs} onAdd={setInputWho} C={C} MEMBERS={MEMBERS}/>
         :tab==="record" ?<RecordTab snapsJw={snapsJw} snapsSh={snapsSh} onDelete={deleteSnap} C={C} MEMBERS={MEMBERS}/>
         :tab==="chat"   ?<ChatTab chats={chats} onSend={sendChat} onDeleteChat={deleteChat} profiles={profiles} C={C} MEMBERS={MEMBERS}/>
         :tab==="fixed"  ?<FixedTab fixedExps={fixedExps} installs={installs} onSave={saveFixed} C={C} MEMBERS={MEMBERS}/>
